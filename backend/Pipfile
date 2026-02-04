@@ -12,6 +12,13 @@ djoser = "*"
 djangorestframework-simplejwt = "*"
 pillow = "*"
 django-filter = "*"
+python-decouple = "*"
+drf-spectacular = "*"
+django-cors-headers = "*"
+django-redis = "*"
+celery = "*"
+django-celery-results = "*"
+redis = "*"
 
 [dev-packages]
 
