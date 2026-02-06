@@ -2,16 +2,18 @@
 
 ## Project Overview
 
-Django REST Framework blogging platform with RESTful API. Users can create, read, update, and delete blog posts with categories, comments, and media attachments. Supports anonymous comments, draft management, and content tagging system.
+Django REST Framework blogging platform with RESTful API. Users can create, read, update, and delete blog posts with categories, comments, and media attachments. Supports anonymous comments, draft management, and content tagging system. Includes background task processing via Celery and Redis.
 
 ## Tech Stack
 
 - **Framework**: Django 5.2.7
 - **API**: Django REST Framework
 - **Authentication**: Djoser (JWT tokens)
-- **Database**: SQLite3
+- **Database**: SQLite3 (Development)
 - **Filters**: django_filters
 - **Debug**: debug_toolbar
+- **Task Queue**: Celery
+- **Broker/Result Backend**: Redis
 - **Frontend**: Not specified (standalone API)
 
 ## Folder Structure
@@ -23,6 +25,7 @@ backend/
 │   │   ├── models.py   # Post, Category, Comment, Profile, PostImages
 │   │   ├── serializers.py
 │   │   ├── views.py
+│   │   ├── tasks.py    # Background tasks (e.g., image processing)
 │   │   └── urls.py
 │   ├── users/          # User authentication & profiles
 │   │   ├── models.py   # Custom User extending AbstractUser
@@ -34,6 +37,7 @@ backend/
 ├── media/              # Uploaded files (images, profile pics)
 ├── Blog/               # Django project config
 │   ├── settings.py     # Config, auth, JWT settings
+│   ├── celery.py       # Celery app configuration
 │   └── urls.py
 └── db.sqlite3
 ```
@@ -52,14 +56,17 @@ backend/
 - Post images support via PostImages model
 - Comments with threading (parent/child replies) and guest support
 - Draft post management via separate endpoint
+- **Background Tasks**: Image processing task (`process_post_image`) triggered on image upload.
 
 ### Tagging System (apps/tags/)
 - Tag entity for categories
 - GenericForeignKey for flexible tagging (TaggedItem model)
+- *Note: Views/URLs not yet implemented.*
 
 ### Like System (apps/likes/)
 - Generic relation for liking any content type
 - Content-type/object-id indexing for performance
+- *Note: Views/URLs not yet implemented.*
 
 ### API Architecture
 - RESTful resource-based routing
@@ -71,35 +78,29 @@ backend/
 
 - Django ORM as data store
 - SQLite3 database (development)
+- Redis for Celery task broker and results
 - Session-based admin interface
 - JWT tokens for API state persistence
 - Manual profile creation on first access
 
 ## Data Flow
 
-1. **User Action** (Create post)
-   - Frontend sends POST request to /blog/posts/
-   - JWT authentication validates request
-   - IsAuthenticated permission check
-   - PostModelViewset receives request
+1. **User Action** (Create post with image)
+   - Frontend sends POST request to /blog/posts/ (creates Post)
+   - Frontend sends POST request to /blog/posts/{id}/images/ (uploads Image)
+   
+2. **API Processing**
+   - **Post**: `PostModelViewset` creates post record.
+   - **Image**: `PostImageModelViewset` saves image, then triggers `process_post_image.delay(instance.id)`.
 
-2. **API Processing** (apps/blog/views.py:16-31)
-   - perform_create() sets author to authenticated user
-   - Serializer validates data
-   - Database transaction creates Post record
-   - Response includes created object with metadata
-
-3. **Related Operations**
-   - Attachments: POST /blog/posts/{id}/images/
-   - Comments: POST /blog/posts/{id}/comments/
-   - Drafts: GET /blog/posts/drafts/ (user-specific)
-   - Profile: GET/PUT /blog/profile/me/
+3. **Background Processing**
+   - Celery worker picks up the task from Redis.
+   - `process_post_image` resizes/optimizes the image asynchronously.
 
 4. **Query Execution**
-   - select_related() for foreign key relationships
-   - prefetch_related() for many-to-many collections
+   - `select_related()` for foreign key relationships
+   - `prefetch_related()` for many-to-many collections
    - DjangoFilterBackend for field filtering
-   - Custom queryset filtering for drafts/comments
 
 ## Naming Conventions
 
@@ -117,120 +118,33 @@ backend/
 - Nested: posts/{post_pk}/comments, posts/{post_pk}/images
 - Custom: posts/drafts, profile/me
 
-### Fields/Variables
-- Python: snake_case
-- Django ORM: snake_case, camelCase for auto-generated methods
-
-### Permissions
-- Class-based: AllowAny, IsAuthenticated
-- Method-based: action decorators on viewsets
-
-## Coding Style
-
-### ViewSets (apps/blog/views.py)
-```python
-class PostModelViewset(ModelViewSet):
-    queryset = models.Post.objects.select_related('category').prefetch_related('images').all()
-    serializer_class = serializers.PostSerializer
-    filter_backends = [DjangoFilterBackend]
-    filterset_class = filters.PostFilter
-
-    def perform_create(self, serializer):
-        serializer.save(author=self.request.user)
-
-    def get_permissions(self):
-        if self.action in ['list', 'retrieve']:
-            return [AllowAny()]
-        return [IsAuthenticated()]
-```
-
-### Serializers (apps/blog/serializers.py)
-- Mix read-only fields with source mapping
-- Custom validation in validate() method
-- Nested serializers for related objects
-
-### Nested Routing (apps/blog/urls.py)
-```python
-router = routers.DefaultRouter()
-router.register('posts', views.PostModelViewset)
-
-posts_router = routers.NestedDefaultRouter(router, 'posts', lookup='post')
-posts_router.register('comments', views.CommentsModelViewset)
-posts_router.register('images', views.PostImageModelViewset)
-```
-
 ## Key Design Patterns
 
 ### Generic Relations
 - TaggedItem and LikedItem use ContentType + object_id for flexible relationships
 - Enables tagging/liking any model type without foreign keys
 
+### Asynchronous Processing
+- Celery used for heavy lifting (image processing) to keep API response times low.
+
 ### Permission Inheritance
 - Base permission classes defined in viewset.get_permissions()
-- Different access levels for list/retrieve vs create/update/destroy
 
-### Serializer Context
-- Context passed from views to serializers (e.g., post_id for images)
+## Known Limitations / Todo
 
-### Custom User Model
-- AUTH_USER_MODEL = 'users.User' in settings
-- Extends Django's AbstractUser with email field
-
-## Known Limitations
-
-1. **Security**: Insecure secret key and DEBUG=True in production settings
-2. **Database**: SQLite not suitable for production
-3. **Image Storage**: Media files stored locally without CDN
-4. **Password Policy**: Basic Django password validators only
-5. **Content Moderation**: No automated spam detection for comments
-6. **Rate Limiting**: No API rate limiting configured
-7. **Caching**: No caching layer implemented
-8. **Email**: No email verification or password reset configured
-9. **File Upload**: No file validation or size limits
-
-## API Endpoints Summary
-
-### Authentication
-- POST /auth/users/ - Register
-- POST /auth/token/ - JWT login
-- POST /auth/token/refresh/ - Refresh token
-
-### Blog Posts
-- GET /blog/posts/ - List all posts (public)
-- GET /blog/posts/{id}/ - Retrieve post (public)
-- POST /blog/posts/ - Create post (auth)
-- PUT/PATCH /blog/posts/{id}/ - Update (auth)
-- DELETE /blog/posts/{id}/ - Delete (auth)
-- GET /blog/posts/drafts/ - List user drafts (auth)
-
-### Posts Resources
-- GET /blog/posts/{id}/comments/ - List post comments
-- POST /blog/posts/{id}/comments/ - Add comment
-- GET /blog/posts/{id}/images/ - List post images
-
-### Categories
-- GET /blog/categories/ - List categories
-
-### Profile
-- GET /blog/profile/me/ - Get profile
-- PUT /blog/profile/me/ - Update profile
-
-### Tags (Not fully implemented in views)
-- Models exist but no endpoints configured
+1.  **Views Missing**: `apps/likes` and `apps/tags` have models but no views or URLs.
+2.  **Security**: `DEBUG=True` and insecure secret key.
+3.  **Database**: SQLite used.
+4.  **Testing**: Comprehensive tests needed for background tasks and new apps.
+5.  **Notifications**: Not yet implemented.
 
 ## Dependencies
 
 - Django REST Framework
 - Djoser (authentication)
+- Celery + Redis
+- Pillow (Image processing)
 - django-filters
 - debug-toolbar
-- rest_framework_nested (for nested routing)
-- python-decouple (implied for environment config)
-
-## Configuration Notes
-
-- JWT access token lifetime: 120 minutes
-- Custom user model: users.User
-- Media files served at /media/ in DEBUG mode
-- Admin site: /admin/ with custom header
-- Debug toolbar enabled in DEBUG mode
+- rest_framework_nested
+- python-decouple

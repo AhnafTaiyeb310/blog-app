@@ -2,9 +2,11 @@ from rest_framework import serializers
 from django.db import models
 from rest_framework.fields import ReadOnlyField
 from django.forms import ValidationError
+from django.db import transaction
 from . import models
+from .tasks import process_post_image
 
-
+MAX_IMAGE_SIZE = 10*1080*1080
 class PostImageSerializer(serializers.ModelSerializer):
     class Meta:
         model = models.PostImages
@@ -22,13 +24,30 @@ class PostSerializer(serializers.ModelSerializer):
         allow_null=True,
         required= False,
         )
-    images = PostImageSerializer(many=True, read_only=True)
+    images = PostImageSerializer(many=True, write_only=True)
     author = serializers.ReadOnlyField(source='author.username')
 
     class Meta:
         model = models.Post
         fields = ['id','title', 'slug', 'content', 'excerpt', 'author', 'status','category','category_display', 'visibility', 'scheduled_for','images']
         read_only_fields = ('published_at', 'created_at', 'updated_at', 'author')
+
+    def create(self, validated_data):
+        images_data = validated_data.pop('images',[])
+
+        with transaction.atomic():
+            post = models.Post.objects.create(**validated_data)
+
+            for img_data in images_data:
+                image_file = img_data.get('image')
+
+                if image_file.size > MAX_IMAGE_SIZE:
+                    raise serializers.ValidationError("Max image size can be 10MB")
+
+                instance = models.PostImages.objects.create(post=post, **validated_data)
+                process_post_image.delay(instance.id)
+        return post
+            
 
 class CategoriesSerializer(serializers.ModelSerializer):
     class Meta:

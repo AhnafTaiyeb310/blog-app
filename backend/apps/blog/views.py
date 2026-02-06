@@ -12,6 +12,8 @@ from . import models
 from . import serializers
 from . import filters
 
+from .tasks import process_post_image
+
 # Create your views here.
 class PostModelViewset(ModelViewSet):
     queryset = models.Post.objects.select_related('category').prefetch_related('images').all()
@@ -79,8 +81,11 @@ class PostImageModelViewset(ModelViewSet):
         return models.PostImages.objects.filter(post_id = self.kwargs['post_pk'])
     
     def get_serializer_context(self):
-        return {'post_id': self.kwargs['post_pk']} 
+        return {'post_id': self.kwargs['post_pk']}
     
+    def perform_create(self, serializer):
+        instance = serializer.save(post_id = self.kwargs['post_pk'])
+        process_post_image.delay(instance.id)
 class PostDraftModelViewset(GenericViewSet, ListModelMixin):
     serializer_class = serializers.PostSerializer
 
