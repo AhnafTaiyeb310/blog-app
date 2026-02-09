@@ -26,7 +26,7 @@ class PostModelViewset(ModelViewSet):
     def perform_create(self, serializer):
         serializer.save(author= self.request.user)
 
-    @action(detail=False, methods="GET", IsAuthenticated=True)
+    @action(detail=False, methods="GET", permission_classes=[IsAuthenticated])
     def my_posts(self, request):
         posts = models.Post.objects.filter(author= request.user).order_by("-created_at")     
         serializer = self.get_serializer(posts, many=True)
