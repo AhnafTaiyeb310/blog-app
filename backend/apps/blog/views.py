@@ -8,6 +8,8 @@ from rest_framework.permissions import AllowAny, IsAuthenticated
 from rest_framework.settings import api_settings
 from django_filters.rest_framework import DjangoFilterBackend
 from django.db import models
+from rest_framework.decorators import action
+from django.template.context_processors import request
 from . import models
 from . import serializers
 from . import filters
@@ -24,6 +26,12 @@ class PostModelViewset(ModelViewSet):
     def perform_create(self, serializer):
         serializer.save(author= self.request.user)
 
+    @action(detail=False, methods="GET", IsAuthenticated=True)
+    def my_posts(self, request):
+        posts = models.Post.objects.filter(author= request.user).order_by("-created_at")     
+        serializer = self.get_serializer(posts, many=True)
+        return Response(serializer.data)
+    
     def get_permissions(self):
         if self.action in ['list', 'retrieve']:
             permission_classes = [AllowAny]
