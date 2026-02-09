@@ -7,6 +7,8 @@ import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
 import { Clock, Calendar } from "lucide-react";
 import { notFound } from "next/navigation";
+import Link from "next/link";
+import Image from "next/image";
 
 // Dynamic Metadata
 export async function generateMetadata({ params }) {
@@ -66,8 +68,9 @@ export default async function ArticlePage({ params }) {
             {article.title}
           </h1>
 
+
           <div className="flex items-center justify-between border-y border-slate-100 py-6">
-            <div className="flex items-center gap-4">
+            <Link href={`/authors/${article.author.id}`} className="flex items-center gap-4 hover:opacity-80 transition-opacity">
               <Avatar className="h-12 w-12 ring-2 ring-purple-50">
                 <AvatarImage src={article.author.avatar} />
                 <AvatarFallback>{article.author.name[0]}</AvatarFallback>
@@ -76,7 +79,7 @@ export default async function ArticlePage({ params }) {
                 <div className="font-bold text-slate-900">{article.author.name}</div>
                 <div className="text-sm text-slate-500">{article.author.role}</div>
               </div>
-            </div>
+            </Link>
             {/* Mobile Actions (Visible on small screens) */}
             <div className="xl:hidden">
               <ArticleActions className="flex-row" />
@@ -84,12 +87,8 @@ export default async function ArticlePage({ params }) {
           </div>
         </header>
 
-import Image from "next/image";
-
-// ... (existing imports)
-
         {/* Featured Image */}
-        <figure className="mb-12 overflow-hidden rounded-3xl shadow-sm relative aspect-[21/9]">
+        <figure className="mb-12 overflow-hidden rounded-3xl shadow-sm relative aspect-21/9">
           <Image 
             src={article.image} 
             alt={article.title} 
